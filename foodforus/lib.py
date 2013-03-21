@@ -18,7 +18,7 @@ class Request(flask.Request):
 
 def sign_vote(api_key, args):
     data = "ffu0" + api_key
-    for k, v in args.items():
+    for k, v in sorted(args.items()):
         if k == 'sig':
             continue
         data += '{0}{1}'.format(k, v)
