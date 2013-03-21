@@ -2,3 +2,5 @@ SQLALCHEMY_DATABASE_URI = 'sqlite:///foodforus.db'
 DEBUG = True
 SECRET_KEY = ''
 VOTE_KEY = ''
+MAIL_FROM = 'noreply@vtluug.org'
+ADMINS = ['webmaster@vtluug.org']
