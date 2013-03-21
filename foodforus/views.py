@@ -2,12 +2,13 @@ from flask import abort, redirect, request, jsonify
 
 from foodforus import app
 from foodforus import db
+from foodforus import lib
 from foodforus import models
 
 import datetime
 
 
-def top4_restaurants(key, dtstart):
+def top_restaurants(key, dtstart):
     restaurants = {}
     fooders = models.FoodVote.query.filter(models.FoodVote.vote_key ==
             key).filter(models.FoodVote.time_start >= dtstart).all()
@@ -20,17 +21,49 @@ def top4_restaurants(key, dtstart):
         else:
             restaurants[fooder.restaurant_id] = 1
 
+    # TODO: deal with ties by using weights from database
+
     sorted_restaurants = sorted(restaurants.items(), key=lambda x: x[1])
     sorted_restaurants.reverse()
-    # TODO: weight restaurants if there is a tie
-    return sorted_restaurants[:4]
+    return sorted_restaurants
 
 
-@app.route('/foodnow')
-def foodnow():
-    # TODO: figure out where to eat
-    # TODO: divide up into 15 minute windows
-    pass
+def top_times(key, dtstart):
+    times = {}
+    fooders = models.FoodVote.query.filter(models.FoodVote.vote_key ==
+            key).filter(models.FoodVote.time_start >= dtstart).all()
+
+    # tally up time votes
+    # may need to be moved out of memory, blah blah blah
+    for fooder in fooders:
+        if fooder.time_start in times:
+            times[fooder.time_start] += 1
+        else:
+            times[fooder.time_start] = 1
+
+    sorted_times = sorted(times.items(), key=lambda x: x[1])
+    sorted_times.reverse()
+    return sorted_times
+
+
+@app.route('/')
+def index():
+    return jsonify({'message': "Hello, yes, this is food for us."})
+
+
+@app.route('/food/<string:key>')
+def foodnow(key):
+    dtstart = datetime.datetime.now()
+    times = top_times(key, dtstart)
+
+    restaurants = []
+    for r in top_restaurants(key, dtstart):
+        restaurants.append((models.Restaurant.query.get(r[0]).name, r[1]))
+
+    return jsonify({
+        'restaurants': [x for x in restaurants],
+        'times': [(x[0].strftime('%H:%M'), x[1]) for x in times],
+    })
 
 
 @app.route('/food/<string:key>/<string:time>')
@@ -39,26 +72,26 @@ def foodat(key, time):
     parsed = datetime.datetime.strptime(time.strip(), '%H:%M')
     dtstart = dtstart.replace(hour=parsed.hour, minute=parsed.minute, second=0,
             microsecond=0)
-    restaurants = top4_restaurants(key, dtstart)
-    print(restaurants)
+
+    restaurants = []
+    for r in top_restaurants(key, dtstart):
+        restaurants.append((models.Restaurant.query.get(r[0]).name, r[1]))
 
     return jsonify({'restaurants': [x for x in restaurants]})
-
-    #return jsonify({'resturants': [x.serialize() for x in
-    #    models.Restaurant.query.get(restaurants[0][0])]})
 
 
 @app.route('/vote', methods=['POST'])
 def vote():
+    sig = lib.sign_vote(app.config['VOTE_KEY'], request.form)
+    if sig != request.form['sig']:
+        abort(400)
+
     rname = request.form['restaurant'].strip().lower()
     restaurant = models.Restaurant.query.filter(models.Restaurant.name == rname).first()
     if not restaurant:
         restaurant = models.Restaurant(rname)
         db.session.add(restaurant)
         db.session.commit()
-
-    # TODO: check request signature
-    # TODO: check for duplicate votes (update old one?)
 
     dtstart = datetime.datetime.now()
     parsed = datetime.datetime.strptime(request.form['start'].strip(), '%H:%M')
@@ -73,10 +106,15 @@ def vote():
     else:
         dtend = None
 
-    foodvote = models.FoodVote(request.form['key'], request.form['user'],
+    # delete any existing votes by the same user
+    votes = models.FoodVote.query.filter(models.FoodVote.user == request.form['user'].strip()).all()
+    for vote in votes:
+        db.session.delete(vote)
+        db.session.commit()
+
+    foodvote = models.FoodVote(request.form['key'], request.form['user'].strip(),
             restaurant.id, dtstart, dtend)
     db.session.add(foodvote)
     db.session.commit()
 
     return jsonify(foodvote.serialize())
-
