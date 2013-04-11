@@ -94,7 +94,11 @@ def vote():
         db.session.commit()
 
     dtstart = datetime.datetime.now()
-    parsed = datetime.datetime.strptime(request.form['start'].strip(), '%H:%M')
+    try:
+        parsed = datetime.datetime.strptime(request.form['start'].strip(), '%H:%M')
+    except ValueError:
+        return jsonify({'error': "Invalid time format"})
+
     dtstart = dtstart.replace(hour=parsed.hour, minute=parsed.minute, second=0,
             microsecond=0)
 
