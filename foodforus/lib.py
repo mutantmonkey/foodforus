@@ -17,11 +17,12 @@ class Request(flask.Request):
 
 
 def sign_vote(api_key, args):
-    data = "ffu0" + api_key
+    data = "ffu1"
     for k, v in sorted(args.items()):
         if k == 'sig':
             continue
         data += '{0}{1}'.format(k, v)
+    data += api_key
     h = hashlib.sha256()
     h.update(data)
     return h.hexdigest()
